@@ -56,13 +56,10 @@ For example:
 ```js
 import { Collector } from "microtask-collector"
 
-async function example() {
-	const collector = new Collector({
-		map: values => Object.freeze(values),
-		queueMicrotask: callback => setTimeout(callback, 0)
-	})
-}
-await example()
+const collector = new Collector({
+    map: values => Object.freeze(values),
+    queueMicrotask: callback => setTimeout(callback, 0)
+})
 ```
 
 If `queueMicrotask` is not available from the global scope then `setImmediate` will be used, or `setTimeout` with `0` as the timeout argument.
