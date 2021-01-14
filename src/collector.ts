@@ -25,6 +25,14 @@ interface BasicSet {
   clear(): void
 }
 
+class InternalAbortError extends Error {
+
+}
+
+function noop() {
+
+}
+
 export class Collector<T, O> implements AsyncIterable<O> {
 
   #active = true
@@ -32,14 +40,18 @@ export class Collector<T, O> implements AsyncIterable<O> {
   #resolve: (value: O) => void | undefined = undefined
   #promise: Promise<O> | undefined = undefined
   #nextPromise: WeakMap<Promise<O>, Promise<O>> = new WeakMap()
+  #rejection = deferred<O>()
 
   readonly #map: CollectorMapFn<T, O>
-  readonly #queueMicrotask: typeof defaultQueueMicrotask
+  readonly queueMicrotask: typeof defaultQueueMicrotask
   readonly #iterators: BasicSet = new Set()
 
   constructor(options: CollectorOptions<T, O>) {
     this.#map = options.map
-    this.#queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
+    this.queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
+
+    // Catch early so if there is no iterators being utilised the process won't crash!
+    this.#rejection.promise.catch(noop)
   }
 
   add(value: T) {
@@ -49,7 +61,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
     if (!this.#resolve) return // Resolve has been scheduled or invoked, and now we are in next batch
     const resolve = this.#resolve
     this.#resolve = undefined
-    this.#queueMicrotask(() => {
+    this.queueMicrotask(() => {
       const current = this.#values
       // Start again
       this.#values = []
@@ -61,6 +73,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
   close() {
     this.#active = false
     this.#iterators.clear()
+    this.#rejection.reject(new InternalAbortError())
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<O> {
@@ -75,6 +88,11 @@ export class Collector<T, O> implements AsyncIterable<O> {
           const defer = deferred<O>()
           this.#promise = defer.promise
           this.#resolve = defer.resolve
+
+          // Pass on the rejection to our individual promise
+          // If our promise is already resolved then this will have no effect
+          this.#rejection.promise.catch(defer.reject)
+
           if (lastPromise) {
             this.#nextPromise.set(lastPromise, this.#promise)
           }
@@ -82,7 +100,15 @@ export class Collector<T, O> implements AsyncIterable<O> {
         }
         while (promise) {
           lastPromise = promise
-          yield lastPromise
+          try {
+            yield /* Its important to await here so we locally catch */ await lastPromise
+          } catch (error) {
+            if (!this.#active && isInternalAbortError(error)) {
+              break
+            } else {
+              yield Promise.reject(error)
+            }
+          }
           promise = this.#nextPromise.get(lastPromise)
         }
       } while (this.#active)
@@ -97,6 +123,20 @@ export class Collector<T, O> implements AsyncIterable<O> {
   }
 
 
+}
+
+function isInternalAbortError(error: unknown) {
+  if (error instanceof InternalAbortError) {
+    return true
+  }
+  if (error instanceof AggregateError) {
+    for (const aggregateError of error.errors) {
+      if (isInternalAbortError(aggregateError)) {
+        return true
+      }
+    }
+  }
+  return false
 }
 
 

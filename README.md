@@ -31,7 +31,7 @@ async function example() {
 		collector.close()
 	}
 
-	async function wait(ms = 1) {
+	async function wait(ms = 0) {
 		return new Promise(resolve => setTimeout(resolve, ms))
 	}
 
