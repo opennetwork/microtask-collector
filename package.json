@@ -1,0 +1,35 @@
+{
+  "name": "microtask-collector",
+  "version": "1.0.0",
+  "types": "./esnext/index.d.ts",
+  "license": "MIT",
+  "type": "module",
+  "main": "./esnext/index.js",
+  "author": "Fabian Cook <hello@fabiancook.dev>",
+  "private": false,
+  "scripts": {
+    "build": "rm -rf esnext && tsc && npm run postbuild",
+    "postbuild": "node scripts/post-build.js",
+    "watch": "tsc -w",
+    "tslint": "tslint -c tslint.json -p tsconfig.json",
+    "prepublishOnly": "npm run build",
+    "example": "node scripts/example.node.js"
+  },
+  "peerDependencies": {
+
+  },
+  "dependencies": {
+
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opennetwork/microtask-collector.git"
+  },
+  "devDependencies": {
+    "@types/node": "^14.0.1",
+    "esm": "^3.2.25",
+    "filehound": "^1.17.4",
+    "tslint": "^6.1.2",
+    "typescript": "^4.0.2"
+  }
+}
