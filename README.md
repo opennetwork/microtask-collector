@@ -35,13 +35,6 @@ async function wait(ms = 0) {
 }
 
 await Promise.all([watch(), producer()])
-
-/**
-* Logs 
-* { values: [1, 2] }
-* { values: [3] }
-* { values: [4, 5] }
-*/
 ```
 
 The above example will log:
