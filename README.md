@@ -9,36 +9,32 @@ Creates a collection of values from the current microtask
 ```js
 import { Collector } from "microtask-collector"
 
-async function example() {
-	const collector = new Collector({
-		map: values => Object.freeze(values)
-	})
+const collector = new Collector({
+    map: values => Object.freeze(values)
+})
 
-	async function watch() {
-		for await (const values of collector) {
-			console.log({ values })
-		}
-	}
-
-	async function producer() {
-		collector.add(1)
-		collector.add(2)
-		await wait()
-		collector.add(3)
-		await wait()
-		collector.add(4)
-		collector.add(5)
-		collector.close()
-	}
-
-	async function wait(ms = 0) {
-		return new Promise(resolve => setTimeout(resolve, ms))
-	}
-
-	await Promise.all([watch(), producer()])
+async function watch() {
+    for await (const values of collector) {
+        console.log({ values })
+    }
 }
 
-await example()
+async function producer() {
+    collector.add(1)
+    collector.add(2)
+    await wait()
+    collector.add(3)
+    await wait()
+    collector.add(4)
+    collector.add(5)
+    collector.close()
+}
+
+async function wait(ms = 0) {
+    return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+await Promise.all([watch(), producer()])
 
 /**
 * Logs 

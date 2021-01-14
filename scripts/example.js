@@ -1,7 +1,7 @@
 import { Collector } from "../esnext/index.js"
 import { ok } from "assert"
 
-async function example() {
+{
   const collector = new Collector({
     map: values => Object.freeze(values)
   })
@@ -23,15 +23,8 @@ async function example() {
     collector.close()
   }
 
-  async function wait(ms = 0) {
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
-
   await Promise.all([watch(), producer()])
 }
-
-await example()
-  .catch(console.error)
 
 /**
 * Logs
@@ -40,7 +33,7 @@ await example()
 * { values: [4, 5] }
 */
 
-async function closingExample() {
+{
   const collector = new Collector({
     map: values => Object.freeze(values)
   })
@@ -60,17 +53,61 @@ async function closingExample() {
     collector.close()
   }
 
-  async function wait(ms = 0) {
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
-
   await Promise.all([watch(), producer()])
 }
-
-await closingExample()
-  .catch(console.error)
 
 /**
  * Logs
  * { result: { done: true, value: undefined } }
  */
+
+{
+  const collector = new Collector({
+    map: values => Object.freeze(values),
+    queueMicrotask: callback => setTimeout(callback, 5)
+  })
+
+  async function watch() {
+    const iterator = collector[Symbol.asyncIterator]()
+    async function withValue() {
+      const nextPromise = iterator.next()
+      await wait(2)
+      // By now our collector has been closed and we should be done
+      const result = await nextPromise
+      console.log({ result })
+      ok(!result.done)
+      ok(Array.isArray(result.value) && result.value[0] === 1)
+    }
+    async function withoutValue() {
+      const nextPromise = iterator.next()
+      await wait(2)
+      // By now our collector has been closed and we should be done
+      const result = await nextPromise
+      console.log({ result })
+      ok(result.done)
+    }
+    await withValue()
+    await withoutValue()
+  }
+
+  async function producer() {
+    collector.add(1)
+    collector.close()
+  }
+
+  await Promise.all([watch(), producer()])
+}
+
+/**
+ * Logs
+ * { result: { done: false, value: [ 1 ] } }
+ * { result: { done: true, value: undefined } }
+ */
+
+
+
+
+
+async function wait(ms = 0) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}

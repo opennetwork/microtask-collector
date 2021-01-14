@@ -41,6 +41,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
   #promise: Promise<O> | undefined = undefined
   #nextPromise: WeakMap<Promise<O>, Promise<O>> = new WeakMap()
   #rejection = deferred<O>()
+  #finalPromise: Promise<O> | undefined = undefined
 
   readonly #map: CollectorMapFn<T, O>
   readonly queueMicrotask: typeof defaultQueueMicrotask
@@ -112,14 +113,34 @@ export class Collector<T, O> implements AsyncIterable<O> {
           promise = this.#nextPromise.get(lastPromise)
         }
       } while (this.#active)
+
     } finally {
       this.#iterators.delete(id)
+
       if (!this.#iterators.size) {
-        this.#values = []
         this.#promise = undefined
         this.#resolve = undefined
       }
+
+      if (this.#values.length) {
+        // If we have some values, we closed before we hit a microtask!
+        // values can be only added if this.#active was true..
+        //
+        // If `options.queueMicrotask` takes shorter amount of time then `rejection.promise.catch` then
+        // we are good to go, but if it takes longer, then this case comes into play
+
+        const defer = deferred<O>()
+        defer.resolve(this.#map(this.#values))
+        this.#finalPromise = defer.promise
+        this.#values = []
+      }
+
+      if (this.#finalPromise) {
+        yield this.#finalPromise
+      }
+
     }
+
   }
 
 
