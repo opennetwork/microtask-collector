@@ -47,6 +47,10 @@ export class Collector<T, O> implements AsyncIterable<O> {
   readonly queueMicrotask: typeof defaultQueueMicrotask
   readonly #iterators: BasicSet = new Set()
 
+  get size() {
+    return this.#values.length
+  }
+
   constructor(options: CollectorOptions<T, O>) {
     this.#map = options.map
     this.queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
@@ -59,6 +63,11 @@ export class Collector<T, O> implements AsyncIterable<O> {
     if (!this.#active) return
     if (!this.#iterators.size) return // Do not add if there is nothing waiting on results
     this.#values.push(value)
+    this.#queueResolve();
+  }
+
+  #queueResolve = () => {
+    if (!this.#values.length) return; // We must have at least one value
     if (!this.#resolve) return // Resolve has been scheduled or invoked, and now we are in next batch
     const resolve = this.#resolve
     this.#resolve = undefined
@@ -69,7 +78,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
       this.#promise = undefined
       resolve(this.#map(current))
     })
-  }
+  };
 
   close() {
     this.#active = false
@@ -89,6 +98,9 @@ export class Collector<T, O> implements AsyncIterable<O> {
           const defer = deferred<O>()
           this.#promise = defer.promise
           this.#resolve = defer.resolve
+          // This will resolve the above promise with any current values available
+          // else will be noop
+          this.#queueResolve();
 
           // Pass on the rejection to our individual promise
           // If our promise is already resolved then this will have no effect

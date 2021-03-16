@@ -104,10 +104,24 @@ import { ok } from "assert"
  * { result: { done: true, value: undefined } }
  */
 
-
-
-
-
 async function wait(ms = 0) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function deferred() {
+  let resolve,
+    reject
+  const promise = new Promise(
+    (resolveFn, rejectFn) => {
+      resolve = resolveFn
+      reject = rejectFn
+    }
+  )
+  ok(resolve)
+  ok(reject)
+  return {
+    resolve,
+    reject,
+    promise
+  }
 }
