@@ -16,6 +16,7 @@ export function defaultQueueMicrotask(fn: () => void): void {
 export interface CollectorOptions<T, O> {
   map: CollectorMapFn<T, O>
   queueMicrotask?(fn: () => void): void
+  eagerCollection?: boolean;
 }
 
 interface BasicSet {
@@ -42,6 +43,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
   #nextPromise: WeakMap<Promise<O>, Promise<O>> = new WeakMap()
   #rejection = deferred<O>()
   #finalPromise: Promise<O> | undefined = undefined
+  #eagerCollection: boolean = false;
 
   readonly #map: CollectorMapFn<T, O>
   readonly queueMicrotask: typeof defaultQueueMicrotask
@@ -54,6 +56,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
   constructor(options: CollectorOptions<T, O>) {
     this.#map = options.map
     this.queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
+    this.#eagerCollection = options.eagerCollection ?? false;
 
     // Catch early so if there is no iterators being utilised the process won't crash!
     this.#rejection.promise.catch(noop)
@@ -61,7 +64,7 @@ export class Collector<T, O> implements AsyncIterable<O> {
 
   add(value: T) {
     if (!this.#active) return
-    if (!this.#iterators.size) return // Do not add if there is nothing waiting on results
+    if (!this.#eagerCollection && !this.#iterators.size) return // Do not add if there is nothing waiting on results
     this.#values.push(value)
     this.#queueResolve();
   }
