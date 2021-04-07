@@ -1,6 +1,6 @@
 {
   "name": "microtask-collector",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "types": "./esnext/index.d.ts",
   "license": "MIT",
   "type": "module",
