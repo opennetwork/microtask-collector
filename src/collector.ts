@@ -43,10 +43,6 @@ export class Collector<T> implements AsyncIterable<T[]> {
 
   #pointer: object = {}
 
-  get size() {
-    return this.#values.get(this.#pointer) ? 1 : 0;
-  }
-
   constructor(options: CollectorOptions = {}) {
     this.queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
 
