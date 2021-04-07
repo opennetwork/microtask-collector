@@ -16,7 +16,9 @@
     "example": "node scripts/example.node.js"
   },
   "peerDependencies": {},
-  "dependencies": {},
+  "dependencies": {
+    "@opennetwork/linked-list": "^4.0.0"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/opennetwork/microtask-collector.git"

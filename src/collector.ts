@@ -1,7 +1,5 @@
-
-export interface CollectorMapFn<T, O> {
-  (input: T[]): O
-}
+import {deferred} from "./deferred";
+import {WeakLinkedList} from "@opennetwork/linked-list";
 
 export function defaultQueueMicrotask(fn: () => void): void {
   if (typeof queueMicrotask === "function") {
@@ -13,9 +11,9 @@ export function defaultQueueMicrotask(fn: () => void): void {
   }
 }
 
-export interface CollectorOptions<T, O> {
-  map: CollectorMapFn<T, O>
+export interface CollectorOptions {
   queueMicrotask?(fn: () => void): void
+  eager?: boolean
 }
 
 interface BasicSet {
@@ -33,27 +31,28 @@ function noop() {
 
 }
 
-export class Collector<T, O> implements AsyncIterable<O> {
+export class Collector<T> implements AsyncIterable<T[]> {
 
   #active = true
-  #values: T[] = []
-  #resolve: (value: O) => void | undefined = undefined
-  #promise: Promise<O> | undefined = undefined
-  #nextPromise: WeakMap<Promise<O>, Promise<O>> = new WeakMap()
-  #rejection = deferred<O>()
-  #finalPromise: Promise<O> | undefined = undefined
+  #resolve: () => void | undefined = undefined
+  #promise: Promise<void> | undefined = undefined
+  #rejection = deferred()
 
-  readonly #map: CollectorMapFn<T, O>
+  readonly #values = new WeakLinkedList<T>()
+
   readonly queueMicrotask: typeof defaultQueueMicrotask
-  readonly #iterators: BasicSet = new Set()
+  readonly #eager
+
+  #pointer: object = {}
 
   get size() {
-    return this.#values.length
+    return this.#values.get(this.#pointer) ? 1 : 0;
   }
 
-  constructor(options: CollectorOptions<T, O>) {
-    this.#map = options.map
+  constructor(options: CollectorOptions = {}) {
     this.queueMicrotask = options.queueMicrotask || defaultQueueMicrotask
+
+    this.#eager = options.eager ?? false;
 
     // Catch early so if there is no iterators being utilised the process won't crash!
     this.#rejection.promise.catch(noop)
@@ -61,96 +60,102 @@ export class Collector<T, O> implements AsyncIterable<O> {
 
   add(value: T) {
     if (!this.#active) return
-    if (!this.#iterators.size) return // Do not add if there is nothing waiting on results
-    this.#values.push(value)
+    const pointer = this.#pointer;
+    const node = this.#values.get(pointer);
+    if (node) {
+      const next: object = {};
+      this.#values.insert(pointer, next, value);
+      this.#pointer = next;
+    } else {
+      this.#values.insert(undefined, pointer, value);
+    }
     this.#queueResolve();
   }
 
+  #constructPromise = () => {
+    const defer = deferred()
+    this.#promise = defer.promise
+    this.#resolve = defer.resolve
+    // Pass on the rejection to our individual promise
+    // If our promise is already resolved then this will have no effect
+    this.#rejection.promise.catch(defer.reject)
+  }
+
   #queueResolve = () => {
-    if (!this.#values.length) return; // We must have at least one value
-    if (!this.#resolve) return // Resolve has been scheduled or invoked, and now we are in next batch
+    if (!this.#resolve) {
+      this.#constructPromise();
+    }
     const resolve = this.#resolve
+    const promise = this.#promise
     this.#resolve = undefined
     this.queueMicrotask(() => {
-      const current = this.#values
-      // Start again
-      this.#values = []
-      this.#promise = undefined
-      resolve(this.#map(current))
+      if (this.#promise === promise) {
+        this.#promise = undefined
+      }
+      resolve();
     })
   };
 
   close() {
     this.#active = false
-    this.#iterators.clear()
     this.#rejection.reject(new InternalAbortError())
   }
 
-  async *[Symbol.asyncIterator](): AsyncIterator<O> {
+  async *[Symbol.asyncIterator](): AsyncIterator<T[]> {
     if (!this.#active) return
-    const id = {}
-    this.#iterators.add(id)
-    let promise: Promise<O> | undefined = undefined,
-      lastPromise: typeof promise
+    const values = this.#values;
+    let pointer = this.#pointer;
+    let promise: Promise<void> | undefined = undefined,
+      yielded = new WeakSet<object>();
     try {
       do {
-        if (!promise && !this.#promise) {
-          const defer = deferred<O>()
-          this.#promise = defer.promise
-          this.#resolve = defer.resolve
-          // This will resolve the above promise with any current values available
-          // else will be noop
-          this.#queueResolve();
-
-          // Pass on the rejection to our individual promise
-          // If our promise is already resolved then this will have no effect
-          this.#rejection.promise.catch(defer.reject)
-
-          if (lastPromise) {
-            this.#nextPromise.set(lastPromise, this.#promise)
-          }
-          promise = this.#promise
+        let yielding;
+        while ((yielding = compile()).length) {
+          yield yielding;
         }
-        while (promise) {
-          lastPromise = promise
-          try {
-            yield /* Its important to await here so we locally catch */ await lastPromise
-          } catch (error) {
-            if (!this.#active && isInternalAbortError(error)) {
-              break
-            } else {
-              yield Promise.reject(error)
-            }
+        if (!this.#promise) {
+          this.#constructPromise();
+        }
+        promise = this.#promise
+        try {
+          // Its important to await here so we locally catch
+          // Once the promise has resolved we will hit our eager loop and yield the
+          // available values
+          await promise;
+        } catch (error) {
+          if (!this.#active && isInternalAbortError(error)) {
+            break
+          } else {
+            yield Promise.reject(error)
           }
-          promise = this.#nextPromise.get(lastPromise)
         }
       } while (this.#active)
 
     } finally {
-      this.#iterators.delete(id)
-
-      if (!this.#iterators.size) {
-        this.#promise = undefined
-        this.#resolve = undefined
+      const remaining = compile();
+      if (remaining.length) {
+        yield remaining;
       }
+    }
 
-      if (this.#values.length) {
-        // If we have some values, we closed before we hit a microtask!
-        // values can be only added if this.#active was true..
-        //
-        // If `options.queueMicrotask` takes shorter amount of time then `rejection.promise.catch` then
-        // we are good to go, but if it takes longer, then this case comes into play
-
-        const defer = deferred<O>()
-        defer.resolve(this.#map(this.#values))
-        this.#finalPromise = defer.promise
-        this.#values = []
+    /**
+     * Will compile an array of all values not yet yielded
+     * All values returned will not be returned again by this iterator
+     */
+    function compile() {
+      const array: T[] = [];
+      let node = values.get(pointer);
+      while(node = values.get(pointer)) {
+        if (!yielded.has(pointer)) {
+          array.push(node.value);
+          yielded.add(pointer);
+        }
+        if (!node.next) {
+          break;
+        }
+        pointer = node.next;
       }
-
-      if (this.#finalPromise) {
-        yield this.#finalPromise
-      }
-
+      return array;
     }
 
   }
@@ -172,33 +177,3 @@ function isInternalAbortError(error: unknown) {
   return false
 }
 
-
-interface Deferred<T = void> {
-  resolve(value: T): void
-  reject(reason: unknown): void
-  promise: Promise<T>
-}
-
-function deferred<T = void>(): Deferred<T> {
-  let resolve: Deferred<T>["resolve"] | undefined = undefined,
-    reject: Deferred<T>["reject"] | undefined = undefined
-  const promise = new Promise<T>(
-    (resolveFn, rejectFn) => {
-      resolve = resolveFn
-      reject = rejectFn
-    }
-  )
-  ok(resolve)
-  ok(reject)
-  return {
-    resolve,
-    reject,
-    promise
-  }
-}
-
-function ok(value: unknown): asserts value {
-  if (!value) {
-    throw new Error("Value not provided")
-  }
-}
