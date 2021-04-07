@@ -2,9 +2,7 @@ import { Collector } from "../esnext/index.js"
 import { ok } from "assert"
 
 {
-  const collector = new Collector({
-    map: values => Object.freeze(values)
-  })
+  const collector = new Collector()
 
   async function watch() {
     for await (const values of collector) {
@@ -34,9 +32,7 @@ import { ok } from "assert"
 */
 
 {
-  const collector = new Collector({
-    map: values => Object.freeze(values)
-  })
+  const collector = new Collector()
 
   async function watch() {
     const iterator = collector[Symbol.asyncIterator]()
@@ -63,7 +59,6 @@ import { ok } from "assert"
 
 {
   const collector = new Collector({
-    map: values => Object.freeze(values),
     queueMicrotask: callback => setTimeout(callback, 5)
   })
 
