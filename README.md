@@ -9,9 +9,7 @@ Creates a collection of values from the current microtask
 ```js
 import { Collector } from "microtask-collector"
 
-const collector = new Collector({
-    map: values => Object.freeze(values)
-})
+const collector = new Collector()
 
 async function watch() {
     for await (const values of collector) {
@@ -57,18 +55,11 @@ For example:
 import { Collector } from "microtask-collector"
 
 const collector = new Collector({
-    map: values => Object.freeze(values),
     queueMicrotask: callback => setTimeout(callback, 0)
 })
 ```
 
 If `queueMicrotask` is not available from the global scope then `setImmediate` will be used, or `setTimeout` with `0` as the timeout argument.
-
--------------
-
-## `options.map`
-
-The `map` option is required so that any transformations to the value can happen once for all code observing, an array of the collected values will be provided as an argument, this array won't be changed by the collector once `map` has been invoked. 
 
 -------------
 
